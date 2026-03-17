@@ -1,6 +1,5 @@
 /**
  * MeetLink Connect - Main Server
- * WebRTC Video Collaboration Platform Backend
  */
 
 require('dotenv').config();
@@ -42,68 +41,38 @@ const { authenticateToken } = require('./middleware/auth');
 const app = express();
 const server = http.createServer(app);
 
-// ─── Security & Compression ─────────────────────────────────────────────────
+// ─── Security ─────────────────────────────────────────────
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "wss:", "ws:", "https:"],
-      mediaSrc: ["'self'", "blob:"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-    }
-  }
 }));
 app.use(compression());
 
-// ─── CORS ────────────────────────────────────────────────────────────────────
+// ─── CORS ─────────────────────────────────────────────────
 const corsOptions = {
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      process.env.CLIENT_ORIGIN || 'http://localhost:3000',
-      'http://localhost:5173', // Vite dev
-      'http://localhost:8080',
-    ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS policy violation'));
-    }
-  },
+  origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Room-Token'],
 };
 app.use(cors(corsOptions));
 
-// ─── Body Parsing ────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// ─── Body Parsing ─────────────────────────────────────────
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// ─── Logging ─────────────────────────────────────────────────────────────────
-app.use(morgan('combined', {
-  stream: { write: (message) => logger.http(message.trim()) }
-}));
+// ─── Logging ──────────────────────────────────────────────
+app.use(morgan('dev'));
 
-// ─── Rate Limiting ───────────────────────────────────────────────────────────
+// ─── Rate Limiting ────────────────────────────────────────
 app.use('/api/', rateLimiter);
 
-// ─── Static Files ────────────────────────────────────────────────────────────
+// ─── Static Files ─────────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// ─── Health Check ────────────────────────────────────────────────────────────
+// ─── Health Check ─────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0',
-    environment: process.env.NODE_ENV,
-  });
+  res.json({ status: 'ok' });
 });
 
-// ─── API Routes ───────────────────────────────────────────────────────────────
+// ─── API Routes ───────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/rooms', authenticateToken, roomRoutes);
@@ -116,72 +85,105 @@ app.use('/api/translation', authenticateToken, translationRoutes);
 app.use('/api/streams', authenticateToken, streamRoutes);
 app.use('/api/analytics', authenticateToken, analyticsRoutes);
 
-// ─── 404 Handler ─────────────────────────────────────────────────────────────
+// ─── 404 ─────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.path} not found` });
 });
 
-// ─── Global Error Handler ────────────────────────────────────────────────────
+// ─── Error Handler ───────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Socket.IO ───────────────────────────────────────────────────────────────
+// ─── Socket.IO ───────────────────────────────────────────
 const io = new Server(server, {
   cors: corsOptions,
-  maxHttpBufferSize: 50 * 1024 * 1024, // 50MB for file transfers
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  transports: ['websocket', 'polling'],
 });
 
-// ─── Bootstrap ───────────────────────────────────────────────────────────────
-async function bootstrap() {
+// 🔥 IN-MEMORY ROOM STORE
+const rooms = {};
+
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  // JOIN ROOM
+  socket.on("join-room", ({ roomId, user }) => {
+    socket.join(roomId);
+
+    if (!rooms[roomId]) rooms[roomId] = [];
+
+    const exists = rooms[roomId].find(u => u.id === user.id);
+    if (!exists) {
+      rooms[roomId].push({ ...user, socketId: socket.id });
+    }
+
+    // 🔥 SEND PARTICIPANTS
+    io.to(roomId).emit("participants", rooms[roomId]);
+
+    // 🔥 NOTIFY OTHERS (for WebRTC)
+    socket.to(roomId).emit("user-joined", socket.id);
+  });
+
+  // 🔥 WEBRTC OFFER
+  socket.on("offer", ({ offer, to }) => {
+    io.to(to).emit("offer", {
+      offer,
+      from: socket.id,
+    });
+  });
+
+  // 🔥 WEBRTC ANSWER
+  socket.on("answer", ({ answer, to }) => {
+    io.to(to).emit("answer", {
+      answer,
+      from: socket.id,
+    });
+  });
+
+  // 💬 CHAT
+  socket.on("send-message", ({ roomId, message }) => {
+    io.to(roomId).emit("receive-message", message);
+  });
+
+  // LEAVE ROOM
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+
+    for (const roomId in rooms) {
+      rooms[roomId] = rooms[roomId].filter(u => u.socketId !== socket.id);
+
+      io.to(roomId).emit("participants", rooms[roomId]);
+    }
+  });
+});
+
+// ─── START SERVER ────────────────────────────────────────
+async function start() {
   try {
-    // Connect to MongoDB
     await connectDB();
-    logger.info('✅ MongoDB connected');
+    console.log("✅ MongoDB connected");
 
-    // Connect to Redis
     await connectRedis();
-logger.info('✅ Redis connected');
+    console.log("✅ Redis connected");
 
-// 🔥 Attach Redis Adapter to Socket.io
-const { pub, sub } = getPubSubClients();
-io.adapter(createAdapter(pub, sub));
+    const { pub, sub } = getPubSubClients();
+    io.adapter(createAdapter(pub, sub));
 
-logger.info('✅ Redis adapter connected to Socket.io');
-    // Initialize Mediasoup SFU
     await initializeMediasoup();
-    logger.info('✅ Mediasoup SFU initialized');
+    console.log("✅ Mediasoup ready");
 
-    // Setup Socket.IO handlers
-    setupSocketIO(io);
-    logger.info('✅ Socket.IO configured');
+    // optional existing socket service
+    
 
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
-      logger.info(`🚀 MeetLink Server running on port ${PORT} [${process.env.NODE_ENV}]`);
-      logger.info(`📡 WebSocket ready for real-time collaboration`);
+      console.log(`🚀 Server running on port ${PORT}`);
     });
 
-  } catch (error) {
-    logger.error('❌ Bootstrap failed:', error);
+  } catch (err) {
+    console.error("❌ Server failed:", err);
     process.exit(1);
   }
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-bootstrap();
+start();
 
 module.exports = { app, server, io };

@@ -12,7 +12,9 @@ function generateRoomId() {
   return `${part(3)}-${part(4)}-${part(3)}`;
 }
 
+// ============================================================
 // POST /api/rooms - Create a new room
+// ============================================================
 router.post('/', async (req, res, next) => {
   try {
     const {
@@ -24,7 +26,6 @@ router.post('/', async (req, res, next) => {
     if (!name) return res.status(400).json({ success: false, message: 'Room name is required' });
 
     let roomId = generateRoomId();
-    // Ensure uniqueness
     while (await Room.findOne({ roomId })) {
       roomId = generateRoomId();
     }
@@ -51,7 +52,9 @@ router.post('/', async (req, res, next) => {
         ...settings,
       },
       tags: tags || [],
-      course, subject, sessionNumber: sessionNumber || 1,
+      course,
+      subject,
+      sessionNumber: sessionNumber || 1,
     };
 
     if (password) {
@@ -71,7 +74,9 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// ============================================================
 // GET /api/rooms - Get user's rooms
+// ============================================================
 router.get('/', async (req, res, next) => {
   try {
     const { status, type, page = 1, limit = 20 } = req.query;
@@ -102,7 +107,12 @@ router.get('/', async (req, res, next) => {
       success: true,
       data: {
         rooms: rooms.map(formatRoom),
-        pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) },
+        pagination: {
+          total,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(total / limit),
+        },
       }
     });
   } catch (err) {
@@ -110,7 +120,9 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// ============================================================
 // GET /api/rooms/:roomId - Get room details
+// ============================================================
 router.get('/:roomId', async (req, res, next) => {
   try {
     const room = await Room.findOne({ roomId: req.params.roomId })
@@ -126,17 +138,20 @@ router.get('/:roomId', async (req, res, next) => {
   }
 });
 
-// PATCH /api/rooms/:roomId - Update room settings
+// ============================================================
+// PATCH /api/rooms/:roomId - Update room
+// ============================================================
 router.patch('/:roomId', async (req, res, next) => {
   try {
     const room = await Room.findOne({ roomId: req.params.roomId });
     if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
 
     if (room.host.toString() !== req.userId) {
-      return res.status(403).json({ success: false, message: 'Only the host can update room settings' });
+      return res.status(403).json({ success: false, message: 'Only host can update room' });
     }
 
     const allowedFields = ['name', 'description', 'settings', 'maxParticipants', 'isPrivate', 'tags'];
+
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
         if (field === 'settings') {
@@ -152,90 +167,59 @@ router.patch('/:roomId', async (req, res, next) => {
     }
 
     await room.save();
-    res.json({ success: true, message: 'Room updated', data: { room: formatRoom(room) } });
+
+    res.json({
+      success: true,
+      message: 'Room updated',
+      data: { room: formatRoom(room) },
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/rooms/:roomId - Delete a room
+// ============================================================
+// DELETE /api/rooms/:roomId
+// ============================================================
 router.delete('/:roomId', async (req, res, next) => {
   try {
     const room = await Room.findOne({ roomId: req.params.roomId });
     if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
+
     if (room.host.toString() !== req.userId) {
-      return res.status(403).json({ success: false, message: 'Only host can delete a room' });
+      return res.status(403).json({ success: false, message: 'Only host can delete' });
     }
 
     await Room.findByIdAndDelete(room._id);
+
     res.json({ success: true, message: 'Room deleted' });
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/rooms/:roomId/participants - Room participant list
-router.get('/:roomId/participants', async (req, res, next) => {
-  try {
-    const room = await Room.findOne({ roomId: req.params.roomId })
-      .populate('participants.user', 'name avatar role email');
-
-    if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
-
-    res.json({ success: true, data: { participants: room.participants } });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/rooms/:roomId/co-host - Add co-host
-router.post('/:roomId/co-host', async (req, res, next) => {
-  try {
-    const { userId } = req.body;
-    const room = await Room.findOne({ roomId: req.params.roomId });
-    if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
-    if (room.host.toString() !== req.userId) {
-      return res.status(403).json({ success: false, message: 'Only host can add co-hosts' });
-    }
-
-    if (!room.coHosts.includes(userId)) {
-      room.coHosts.push(userId);
-      await room.save();
-    }
-
-    res.json({ success: true, message: 'Co-host added' });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/rooms/:roomId/sessions - Session history
-router.get('/:roomId/sessions', async (req, res, next) => {
-  try {
-    const room = await Room.findOne({ roomId: req.params.roomId });
-    if (!room) return res.status(404).json({ success: false, message: 'Room not found' });
-
-    const sessions = await Session.find({ room: room._id }).sort({ startedAt: -1 }).limit(50);
-    res.json({ success: true, data: { sessions } });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/rooms/instant - Create instant meeting (no scheduling)
+// ============================================================
+// POST /api/rooms/instant - Instant meeting
+// ============================================================
 router.post('/instant', async (req, res, next) => {
   try {
     const { name } = req.body;
     const roomId = generateRoomId();
 
     const room = await Room.create({
-      name: name || `${req.user.name}'s Meeting`,
+      name: name || "Instant Session",
       roomId,
       host: req.userId,
       type: 'meeting',
       status: 'active',
       startedAt: new Date(),
-      settings: { waitingRoom: false, muteOnEntry: false, allowChat: true, allowScreenShare: true },
+      participants: [],
+      settings: {
+        waitingRoom: false,
+        muteOnEntry: false,
+        allowChat: true,
+        allowScreenShare: true,
+      },
     });
 
     await room.populate('host', 'name avatar role');
@@ -243,17 +227,27 @@ router.post('/instant', async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'Instant meeting created',
-      data: { room: formatRoom(room), joinUrl: `${process.env.CLIENT_ORIGIN}/room/${roomId}` },
+      data: {
+        room: formatRoom(room),
+        joinUrl: `${process.env.CLIENT_ORIGIN || 'http://localhost:3000'}/room/${roomId}`,
+      },
     });
   } catch (err) {
     next(err);
   }
 });
 
+// ============================================================
+// FORMAT ROOM (🔥 CRITICAL FIX HERE)
+// ============================================================
 function formatRoom(room) {
   const r = room.toObject ? room.toObject() : room;
+
+  const isLive = r.status === "active";
+
   return {
     id: r._id,
+    _id: r._id,
     name: r.name,
     description: r.description,
     roomId: r.roomId,
@@ -261,8 +255,11 @@ function formatRoom(room) {
     coHosts: r.coHosts,
     type: r.type,
     status: r.status,
+    isLive: isLive,
+    isActive: isLive,
     isPrivate: r.isPrivate,
     maxParticipants: r.maxParticipants,
+    participants: r.participants || [],
     participantCount: r.participants?.length || 0,
     scheduledAt: r.scheduledAt,
     startedAt: r.startedAt,

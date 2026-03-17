@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # ─── Backend API ───────────────────────────────────────────────────────────
+  backend:
+    build: .
+    container_name: meetlink-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongo:27017/meetlink
+      - REDIS_URL=redis://redis:6379
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:3000}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - TURN_SERVER=${TURN_SERVER}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
+      - GOOGLE_TRANSLATE_API_KEY=${GOOGLE_TRANSLATE_API_KEY}
+      - GOOGLE_SPEECH_API_KEY=${GOOGLE_SPEECH_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - MEDIASOUP_ANNOUNCED_IP=${SERVER_PUBLIC_IP}
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - meetlink-net
+    # WebRTC media ports (for Mediasoup SFU)
+    ports:
+      - "5000:5000"
+      - "40000-49999:40000-49999/udp"
+      - "40000-49999:40000-49999/tcp"
+
+  # ─── MongoDB ────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7.0
+    container_name: meetlink-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=meetlink
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meetlink-net
+
+  # ─── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: meetlink-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meetlink-net
+
+  # ─── Nginx Reverse Proxy ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: meetlink-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+    networks:
+      - meetlink-net
+
+volumes:
+  mongo_data:
+  redis_data:
+  uploads_data:
+  logs_data:
+
+networks:
+  meetlink-net:
+    driver: bridge

@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.production
+uploads/documents/*
+uploads/recordings/*
+uploads/avatars/*
+!uploads/.gitkeep
+logs/*.log
+*.pem
+*.key
+ssl/
+dist/
+.DS_Store
+coverage/
+.env

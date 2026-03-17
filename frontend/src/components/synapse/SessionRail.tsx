@@ -23,7 +23,7 @@ export const SessionRail = () => {
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/sessions", {
+      const res = await fetch("https://your-backend.onrender.com/api/sessions", {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
@@ -51,7 +51,7 @@ export const SessionRail = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/rooms/instant", {
+      const res = await fetch("https://your-backend.onrender.com/api/rooms/instant", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

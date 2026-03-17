@@ -25,7 +25,7 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchSessions = async () => {
       try {
-        const res = await fetch("http://localhost:5000/api/sessions", {
+        const res = await fetch("https://your-backend.onrender.com/api/sessions", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -80,7 +80,7 @@ const Dashboard = () => {
               <button
                 onClick={async () => {
   try {
-    const res = await fetch("http://localhost:5000/api/rooms/instant", {
+    const res = await fetch("https://your-backend.onrender.com/api/rooms/instant", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

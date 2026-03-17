@@ -50,7 +50,7 @@ const MeetingRoom = () => {
   // 📦 FETCH ROOM
   useEffect(() => {
     const fetchSession = async () => {
-      const res = await fetch(`http://localhost:5000/api/rooms/${sessionId}`, {
+      const res = await fetch(`https://your-backend.onrender.com/api/rooms/${sessionId}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
@@ -67,7 +67,7 @@ const MeetingRoom = () => {
   useEffect(() => {
     if (!sessionId || !stream) return;
 
-    const socket = io("http://localhost:5000", {
+    const socket = io("https://your-backend.onrender.com", {
   transports: ["websocket"], // 🔥 FIX
 });
     socketRef.current = socket;

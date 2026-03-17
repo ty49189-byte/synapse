@@ -14,7 +14,7 @@
  * import { MeetLinkClient } from './lib/meetlink';
  * 
  * const client = new MeetLinkClient({
- *   serverUrl: 'http://localhost:5000',
+ *   serverUrl: 'https://synapse-j8v6.onrender.com',
  *   token: 'your_jwt_token',
  * });
  * 

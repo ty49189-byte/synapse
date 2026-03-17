@@ -61,7 +61,7 @@ CLIENT_ORIGIN=http://localhost:3000
 npm run dev
 ```
 
-Server starts at `http://localhost:5000`
+Server starts at `https://synapse-j8v6.onrender.com`
 
 ### 4. Docker (Recommended for Production)
 
@@ -358,7 +358,7 @@ export function VideoRoom({ roomId, token }) {
 
   useEffect(() => {
     const client = new MeetLinkClient({
-      serverUrl: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+      serverUrl: import.meta.env.VITE_API_URL || 'https://synapse-j8v6.onrender.com',
       token,
     });
     clientRef.current = client;
@@ -447,8 +447,8 @@ export function VideoRoom({ roomId, token }) {
 ### Step 4 — Environment Variables (Frontend)
 
 ```env
-VITE_API_URL=http://localhost:5000
-VITE_SOCKET_URL=http://localhost:5000
+VITE_API_URL=https://synapse-j8v6.onrender.com
+VITE_SOCKET_URL=https://synapse-j8v6.onrender.com
 ```
 
 ---
